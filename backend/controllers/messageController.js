@@ -1,6 +1,5 @@
-import { Conversation } from "../models/conversationModel.js";
-import { Message } from "../models/messageModel.js";
-
+import { Conversation } from "../models/conversation.js";
+import { Message } from "../models/message.js";
 
 export const sendMessage = async (req, res) => {
     try {
@@ -8,44 +7,65 @@ export const sendMessage = async (req, res) => {
         const receiverId = req.params.id;
         const { message } = req.body;
 
-        let gotConversation = await Conversation.findOne({
-            participants: { $all: [senderId, receiverId] },
+        // Ensure both senderId and receiverId are provided
+        if (!senderId || !receiverId || !message) {
+            return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        // Find or create conversation
+        let conversation = await Conversation.findOne({
+            participants: { $all: [senderId, receiverId] }
         });
 
-        if (!gotConversation) {
-            gotConversation = await Conversation.create({
+        if (!conversation) {
+            conversation = await Conversation.create({
                 participants: [senderId, receiverId]
-            })
-        };
+            });
+        }
+
+        // Create and save new message
         const newMessage = await Message.create({
             senderId,
             receiverId,
             message
         });
-        if (newMessage) {
-            gotConversation.messages.push(newMessage._id);
-        };
-        await gotConversation.save();
-        
-        //socket io
-        
-        return res.status(201).json({
-            message:"Message sent sucessfully"
-        })
+
+        conversation.messages.push(newMessage._id);
+        await conversation.save();
+
+        // Optionally, emit an event through socket.io here
+
+        return res.status(201).json({ message: "Message sent successfully" });
 
     } catch (error) {
-        console.log(error);
+        console.error("Error sending message:", error);
+        return res.status(500).json({ error: "Internal server error" });
     }
-}
-export const getMessage = async (req, res) => {
+};
+
+export const getMessages = async (req, res) => {
     try {
         const receiverId = req.params.id;
         const senderId = req.id;
+
+        // Ensure both senderId and receiverId are provided
+        if (!senderId || !receiverId) {
+            return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        // Fetch conversation and populate messages
         const conversation = await Conversation.findOne({
             participants: { $all: [senderId, receiverId] }
         }).populate("messages");
-        return res.status(200).json(conversation?.messages);
+
+        if (!conversation) {
+            return res.status(404).json({ error: "Conversation not found" });
+        }
+
+        return res.status(200).json(conversation.messages);
+
     } catch (error) {
-        console.log(error);
+        console.error("Error retrieving messages:", error);
+        return res.status(500).json({ error: "Internal server error" });
     }
-}
+};
